@@ -10,7 +10,6 @@ st.set_page_config(page_title="Zirai Analiz - Finans & Stok", layout="wide")
 def veri_yukle():
     np.random.seed(42)
     musteriler = [f"Müşteri {i}" for i in range(1, 51)]
-    musteriler[0] = "Mehmet Gök"
     urunler_listesi = [f"Ürün {i}" for i in range(1, 41)]
     tedarikciler = [f"Tedarikçi {i}" for i in range(1, 16)]
     
@@ -21,18 +20,30 @@ def veri_yukle():
         m = np.random.choice(musteriler)
         u = np.random.choice(urunler_listesi)
         t = np.random.choice(tedarikciler)
-        adet = np.random.randint(1, 150)
-        alis_f = np.random.randint(100, 1000)
-        satis_f = alis_f * np.random.uniform(1.15, 1.50)
-        stok = np.random.randint(0, 200)
         
+        # Rastgele veriler
+        adet = np.random.randint(1, 100)
+        alis_f = np.random.randint(200, 800)
+        satis_f = alis_f * np.random.uniform(1.20, 1.50)
+        stok = np.random.randint(5, 150)
+        
+        # VADE SİMÜLASYONU (Yeşil ve Kırmızı oluşması için ayarlandı)
         satis_t = baslangic + timedelta(days=np.random.randint(0, 30))
-        m_vade = satis_t + timedelta(days=np.random.randint(180, 360)) # Müşteri Çeki
-        t_vade = satis_t + timedelta(days=np.random.randint(60, 240))  # Tedarikçi Borcu
         
-        # Kar Analizi (Valörlü)
-        vade_farki = (m_vade - t_vade).days
-        finans_maliyeti = (alis_f * 0.001) * vade_farki
+        # Müşteri çekleri genelde 200-300 gün vadeli olsun
+        m_vade = satis_t + timedelta(days=np.random.randint(150, 300))
+        
+        # Tedarikçi ödemesi: %50 ihtimalle çekten önce (Kırmızı), %50 ihtimalle çekten sonra (Yeşil)
+        if np.random.rand() > 0.5:
+            # GÜVENLİ (Yeşil): Ödeme tahsilattan sonra
+            t_vade = m_vade + timedelta(days=np.random.randint(10, 60))
+        else:
+            # RİSKLİ (Kırmızı): Ödeme tahsilattan önce
+            t_vade = m_vade - timedelta(days=np.random.randint(10, 60))
+        
+        # Valörlü Kar Analizi
+        vade_gun_farki = (m_vade - t_vade).days
+        finans_maliyeti = (alis_f * 0.001) * vade_gun_farki
         net_kar = (satis_f - (alis_f + finans_maliyeti)) / alis_f
         
         data.append([m, u, t, adet, alis_f * adet, satis_f * adet, m_vade, t_vade, net_kar, stok])
@@ -49,74 +60,65 @@ st.title("🛡️ Finansal Risk ve Stok Takip Paneli")
 
 tab1, tab2, tab3 = st.tabs(["💰 Nakit Akış Analizi", "📦 Stok Yönetimi", "👥 Müşteri/Ürün Karlılık"])
 
-# --- TAB 1: NAKİT AKIŞ ANALİZİ (Müşteri Çeki vs Tedarikçi Ödemesi) ---
+# --- TAB 1: NAKİT AKIŞ ANALİZİ ---
 with tab1:
     st.header("📅 Tedarikçi Ödeme ve Çek Eşleşme Analizi")
     
-    # Tedarikçi bazında gruplama
-    tedarikci_analiz = df.groupby('Tedarikçi').agg({
+    # Tedarikçi bazında özet
+    t_analiz = df.groupby('Tedarikçi').agg({
         'Borç Tutarı': 'sum',
         'Çek Tutarı': 'sum',
-        'Tedarikçi Ödeme Vadesi': 'min', # En yakın ödeme
-        'Çek Vadesi': 'max'              # En son tahsilat
+        'Tedarikçi Ödeme Vadesi': 'min', # En yakın ödeme tarihimiz
+        'Çek Vadesi': 'max'              # Kasadaki en son çek vadesi
     }).reset_index()
     
-    # Risk Hesaplama: Çekler borcu karşılıyor mu? Ve Vade uygun mu?
-    tedarikci_analiz['Finansal Durum'] = tedarikci_analiz['Çek Tutarı'] - tedarikci_analiz['Borç Tutarı']
-    tedarikci_analiz['Vade Riski (Gün)'] = (tedarikci_analiz['Tedarikçi Ödeme Vadesi'] - tedarikci_analiz['Çek Vadesi']).dt.days
+    # Analiz Sütunları
+    t_analiz['Kasa Dengesi'] = t_analiz['Çek Tutarı'] - t_analiz['Borç Tutarı']
+    t_analiz['Vade Farkı (Gün)'] = (t_analiz['Tedarikçi Ödeme Vadesi'] - t_analiz['Çek Vadesi']).dt.days
 
     def nakit_akisi_renkle(row):
-        # Kırmızı: Çek tutarı borçtan azsa VEYA çekin vadesi ödeme tarihinden sonraysa
-        if row['Finansal Durum'] < 0 or row['Vade Riski (Gün)'] < 0:
-            return ['background-color: #f8d7da'] * len(row)
-        return ['background-color: #d4edda'] * len(row)
+        # KRİTER 1: Kasa borcu karşılamıyorsa (Tutar yetersiz)
+        # KRİTER 2: Ödeme tarihi (min), tahsilat tarihinden (max) önceyse (Vade yetersiz)
+        if row['Kasa Dengesi'] < 0 or row['Vade Farkı (Gün)'] < 0:
+            return ['background-color: #f8d7da; color: #721c24'] * len(row) # Kırmızı
+        else:
+            return ['background-color: #d4edda; color: #155724'] * len(row) # Yeşil
 
-    st.subheader("Tedarikçi Borç/Kasa Çeki Dengesi")
-    st.write("🔴 Kırmızı: Ödeme günü tahsilattan önce veya tutar yetersiz. | 🟢 Yeşil: Ödeme güvenli tarafta.")
+    st.info("💡 **Analiz Mantığı:** Eğer tahsilatlarınızın (çekler) vadesi, borç ödeme tarihinizden sonraya kalıyorsa veya tutar yetersizse satır **Kırmızı** olur. Ödeme rahatsa **Yeşil** olur.")
     
     st.dataframe(
-        tedarikci_analiz.style.apply(nakit_akisi_renkle, axis=1)
-        .format({'Borç Tutarı': '{:,.2f}₺', 'Çek Tutarı': '{:,.2f}₺', 'Finansal Durum': '{:,.2f}₺'}),
+        t_analiz.style.apply(nakit_akisi_renkle, axis=1)
+        .format({
+            'Borç Tutarı': '{:,.2f}₺', 
+            'Çek Tutarı': '{:,.2f}₺', 
+            'Kasa Dengesi': '{:,.2f}₺'
+        }),
         use_container_width=True
     )
 
 # --- TAB 2: STOK YÖNETİMİ ---
 with tab2:
     st.header("🚜 Ürün Stok Durumu")
-    
     stok_df = df[['Ürün', 'Mevcut Stok']].drop_duplicates('Ürün').sort_values(by='Mevcut Stok')
     
-    # Kritik stok uyarısı
-    kritik_limit = 20
-    stok_df['Durum'] = stok_df['Mevcut Stok'].apply(lambda x: '⚠️ KRİTİK' if x < kritik_limit else '✅ YETERLİ')
-    
+    k_limit = 30
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.metric("Kritik Stoktaki Ürün", len(stok_df[stok_df['Mevcut Stok'] < kritik_limit]))
-        st.write("Stok seviyesi 20 adetin altına düşen ürünler:")
-        st.dataframe(stok_df[stok_df['Mevcut Stok'] < kritik_limit], use_container_width=True)
-    
+        st.metric("Kritik Ürün Sayısı", len(stok_df[stok_df['Mevcut Stok'] < k_limit]))
+        st.dataframe(stok_df[stok_df['Mevcut Stok'] < k_limit], use_container_width=True)
     with col2:
         st.bar_chart(stok_df.set_index('Ürün')['Mevcut Stok'])
 
 # --- TAB 3: KARLILIK ---
 with tab3:
     st.header("📊 Müşteri ve Ürün Karlılık Detayları")
-    arama = st.text_input("Müşteri veya Ürün Sorgula...")
-    f_df = df[df['Müşteri'].str.contains(arama, case=False) | df['Ürün'].str.contains(arama, case=False)]
-    
     def kar_renkle(val):
         if val >= 0.25: return 'background-color: #28a745; color: white'
         elif 0.12 <= val < 0.25: return 'background-color: #ffc107'
         else: return 'background-color: #dc3545; color: white'
 
     st.dataframe(
-        f_df.style.applymap(kar_renkle, subset=['Net Kar Oranı'])
+        df.head(100).style.applymap(kar_renkle, subset=['Net Kar Oranı'])
         .format({'Net Kar Oranı': '{:.2%}', 'Borç Tutarı': '{:,.2f}₺', 'Çek Tutarı': '{:,.2f}₺'}),
         use_container_width=True
     )
-
-# --- SİDEBAR ---
-st.sidebar.info(f"**Güncelleme Tarihi:**\n{datetime.now().strftime('%d.%m.%Y %H:%M')}")
-if st.sidebar.button("Excel Raporu Al (Simüle)"):
-    st.sidebar.success("Rapor Hazırlanıyor...")

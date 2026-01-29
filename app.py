@@ -4,104 +4,119 @@ import numpy as np
 from datetime import datetime, timedelta
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Zirai Analiz Pro - Müşteri Bazlı", layout="wide")
+st.set_page_config(page_title="Zirai Analiz - Finans & Stok", layout="wide")
 
 @st.cache_data
-def veri_hazirla():
+def veri_yukle():
     np.random.seed(42)
-    # 50 Müşteri ve 40 Ürün havuzu
-    musteri_listesi = [f"Müşteri {i}" for i in range(1, 51)]
-    musteri_listesi[0] = "Mehmet Gök" # Örnek müşteri
-    
-    urunler = [f"Ürün {i}" for i in range(1, 41)]
+    musteriler = [f"Müşteri {i}" for i in range(1, 51)]
+    musteriler[0] = "Mehmet Gök"
+    urunler_listesi = [f"Ürün {i}" for i in range(1, 41)]
     tedarikciler = [f"Tedarikçi {i}" for i in range(1, 16)]
-
-    raw_data = []
-    baslangic_tarihi = datetime(2025, 2, 1)
-
-    # 1000 adet satış kaydı oluşturuyoruz (Aynı müşteri birçok kez geçecek)
-    for i in range(1000):
-        m = np.random.choice(musteri_listesi)
-        u = np.random.choice(urunler)
-        t = np.random.choice(tedarikciler)
-        
-        adet = np.random.randint(1, 200)
-        alis_f = np.random.randint(100, 1000)
-        satis_f = alis_f * np.random.uniform(1.10, 1.60)
-        
-        satis_t = baslangic_tarihi + timedelta(days=np.random.randint(0, 30))
-        m_vade = satis_t + timedelta(days=np.random.randint(200, 400))
-        t_vade = satis_t + timedelta(days=np.random.randint(30, 150))
-        
-        vade_farki = (m_vade - t_vade).days
-        finansman_kaybi = (alis_f * 0.001) * vade_farki 
-        net_kar_orani = (satis_f - (alis_f + finansman_kaybi)) / alis_f
-        
-        raw_data.append([m, u, t, adet, alis_f * adet, satis_f * adet, m_vade, t_vade, net_kar_orani])
-
-    df_raw = pd.DataFrame(raw_data, columns=[
-        'Müşteri', 'Ürün', 'Tedarikçi', 'Toplam Adet', 'Toplam Maliyet', 
-        'Toplam Satış', 'Son Müşteri Vadesi', 'Son Tedarikçi Vadesi', 'Ortalama Kar Oranı'
-    ])
     
-    # --- MÜŞTERİ BAZLI BİRLEŞTİRME (GROUPBY) ---
-    musteri_ozet = df_raw.groupby('Müşteri').agg({
-        'Ürün': lambda x: ', '.join(x.unique()[:3]) + "...", # Aldığı ilk 3 farklı ürün
-        'Toplam Adet': 'sum',
-        'Toplam Maliyet': 'sum',
-        'Toplam Satış': 'sum',
-        'Son Müşteri Vadesi': 'max',   # En uzak ödeme tarihi
-        'Son Tedarikçi Vadesi': 'max', # En uzak borç tarihi
-        'Ortalama Kar Oranı': 'mean'   # Tüm satışlarının kar ortalaması
-    }).reset_index()
+    data = []
+    baslangic = datetime(2025, 2, 1)
+    
+    for i in range(1000):
+        m = np.random.choice(musteriler)
+        u = np.random.choice(urunler_listesi)
+        t = np.random.choice(tedarikciler)
+        adet = np.random.randint(1, 150)
+        alis_f = np.random.randint(100, 1000)
+        satis_f = alis_f * np.random.uniform(1.15, 1.50)
+        stok = np.random.randint(0, 200)
+        
+        satis_t = baslangic + timedelta(days=np.random.randint(0, 30))
+        m_vade = satis_t + timedelta(days=np.random.randint(180, 360)) # Müşteri Çeki
+        t_vade = satis_t + timedelta(days=np.random.randint(60, 240))  # Tedarikçi Borcu
+        
+        # Kar Analizi (Valörlü)
+        vade_farki = (m_vade - t_vade).days
+        finans_maliyeti = (alis_f * 0.001) * vade_farki
+        net_kar = (satis_f - (alis_f + finans_maliyeti)) / alis_f
+        
+        data.append([m, u, t, adet, alis_f * adet, satis_f * adet, m_vade, t_vade, net_kar, stok])
+        
+    return pd.DataFrame(data, columns=[
+        'Müşteri', 'Ürün', 'Tedarikçi', 'Adet', 'Borç Tutarı', 'Çek Tutarı', 
+        'Çek Vadesi', 'Tedarikçi Ödeme Vadesi', 'Net Kar Oranı', 'Mevcut Stok'
+    ])
 
-    return musteri_ozet
-
-df = veri_hazirla()
+df = veri_yukle()
 
 # --- ARAYÜZ ---
-st.title("👥 Müşteri Bazlı Konsolide Analiz")
-st.markdown("Aynı isimli müşterilerin tüm alımları birleştirilmiş ve valör farkları hesaplanmıştır.")
+st.title("🛡️ Finansal Risk ve Stok Takip Paneli")
 
-# Bölüm 1: Metrikler
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.metric("Toplam Kayıtlı Müşteri", len(df))
-with c2:
-    st.metric("Genel Ciro", f"{df['Toplam Satış'].sum():,.2f} ₺")
-with c3:
-    ortalama_kar = df['Ortalama Kar Oranı'].mean()
-    st.metric("Portföy Kar Ortalaması", f"{ortalama_kar:.2%}")
+tab1, tab2, tab3 = st.tabs(["💰 Nakit Akış Analizi", "📦 Stok Yönetimi", "👥 Müşteri/Ürün Karlılık"])
 
-st.divider()
+# --- TAB 1: NAKİT AKIŞ ANALİZİ (Müşteri Çeki vs Tedarikçi Ödemesi) ---
+with tab1:
+    st.header("📅 Tedarikçi Ödeme ve Çek Eşleşme Analizi")
+    
+    # Tedarikçi bazında gruplama
+    tedarikci_analiz = df.groupby('Tedarikçi').agg({
+        'Borç Tutarı': 'sum',
+        'Çek Tutarı': 'sum',
+        'Tedarikçi Ödeme Vadesi': 'min', # En yakın ödeme
+        'Çek Vadesi': 'max'              # En son tahsilat
+    }).reset_index()
+    
+    # Risk Hesaplama: Çekler borcu karşılıyor mu? Ve Vade uygun mu?
+    tedarikci_analiz['Finansal Durum'] = tedarikci_analiz['Çek Tutarı'] - tedarikci_analiz['Borç Tutarı']
+    tedarikci_analiz['Vade Riski (Gün)'] = (tedarikci_analiz['Tedarikçi Ödeme Vadesi'] - tedarikci_analiz['Çek Vadesi']).dt.days
 
-# Bölüm 2: Filtreleme
-arama = st.text_input("Müşteri Adı Ara...", "")
-f_df = df[df['Müşteri'].str.contains(arama, case=False)]
+    def nakit_akisi_renkle(row):
+        # Kırmızı: Çek tutarı borçtan azsa VEYA çekin vadesi ödeme tarihinden sonraysa
+        if row['Finansal Durum'] < 0 or row['Vade Riski (Gün)'] < 0:
+            return ['background-color: #f8d7da'] * len(row)
+        return ['background-color: #d4edda'] * len(row)
 
-# Bölüm 3: Renklendirme ve Tablo
-def renk_kodla(val):
-    if val >= 0.25: color = 'background-color: #28a745; color: white'
-    elif 0.12 <= val < 0.25: color = 'background-color: #ffc107; color: black'
-    else: color = 'background-color: #dc3545; color: white'
-    return color
+    st.subheader("Tedarikçi Borç/Kasa Çeki Dengesi")
+    st.write("🔴 Kırmızı: Ödeme günü tahsilattan önce veya tutar yetersiz. | 🟢 Yeşil: Ödeme güvenli tarafta.")
+    
+    st.dataframe(
+        tedarikci_analiz.style.apply(nakit_akisi_renkle, axis=1)
+        .format({'Borç Tutarı': '{:,.2f}₺', 'Çek Tutarı': '{:,.2f}₺', 'Finansal Durum': '{:,.2f}₺'}),
+        use_container_width=True
+    )
 
-st.subheader("📋 Müşteri Karlılık Tablosu (Birleştirilmiş)")
-st.dataframe(
-    f_df.style.applymap(renk_kodla, subset=['Ortalama Kar Oranı'])
-    .format({
-        'Ortalama Kar Oranı': '{:.2%}', 
-        'Toplam Maliyet': '{:.2f}₺', 
-        'Toplam Satış': '{:.2f}₺'
-    }),
-    use_container_width=True
-)
+# --- TAB 2: STOK YÖNETİMİ ---
+with tab2:
+    st.header("🚜 Ürün Stok Durumu")
+    
+    stok_df = df[['Ürün', 'Mevcut Stok']].drop_duplicates('Ürün').sort_values(by='Mevcut Stok')
+    
+    # Kritik stok uyarısı
+    kritik_limit = 20
+    stok_df['Durum'] = stok_df['Mevcut Stok'].apply(lambda x: '⚠️ KRİTİK' if x < kritik_limit else '✅ YETERLİ')
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.metric("Kritik Stoktaki Ürün", len(stok_df[stok_df['Mevcut Stok'] < kritik_limit]))
+        st.write("Stok seviyesi 20 adetin altına düşen ürünler:")
+        st.dataframe(stok_df[stok_df['Mevcut Stok'] < kritik_limit], use_container_width=True)
+    
+    with col2:
+        st.bar_chart(stok_df.set_index('Ürün')['Mevcut Stok'])
 
-# Bölüm 4: Uyarı Paneli
-st.sidebar.header("📊 Analiz Detayı")
-st.sidebar.info("""
-**Nasıl Hesaplandı?**
-1. Müşterinin tüm alımları toplandı.
-2. Her satış için kendi vadesine göre finansman yükü düşüldü.
-3. Çıkan 'Net Kar' oranlarının ortalaması alındı.
-""")
+# --- TAB 3: KARLILIK ---
+with tab3:
+    st.header("📊 Müşteri ve Ürün Karlılık Detayları")
+    arama = st.text_input("Müşteri veya Ürün Sorgula...")
+    f_df = df[df['Müşteri'].str.contains(arama, case=False) | df['Ürün'].str.contains(arama, case=False)]
+    
+    def kar_renkle(val):
+        if val >= 0.25: return 'background-color: #28a745; color: white'
+        elif 0.12 <= val < 0.25: return 'background-color: #ffc107'
+        else: return 'background-color: #dc3545; color: white'
+
+    st.dataframe(
+        f_df.style.applymap(kar_renkle, subset=['Net Kar Oranı'])
+        .format({'Net Kar Oranı': '{:.2%}', 'Borç Tutarı': '{:,.2f}₺', 'Çek Tutarı': '{:,.2f}₺'}),
+        use_container_width=True
+    )
+
+# --- SİDEBAR ---
+st.sidebar.info(f"**Güncelleme Tarihi:**\n{datetime.now().strftime('%d.%m.%Y %H:%M')}")
+if st.sidebar.button("Excel Raporu Al (Simüle)"):
+    st.sidebar.success("Rapor Hazırlanıyor...")

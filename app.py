@@ -57,7 +57,7 @@ def veri_yukle_stratejik():
 df = veri_yukle_stratejik()
 
 # --- 3. ÜST PANEL (METRİKLER) ---
-st.title("🛡️ Stratejik Finans ve Müşteri Karlılık Yönetimi")
+st.title("🛡️ Zirai Finans ve Müşteri Karlılık Yönetimi")
 
 m1, m2, m3, m4, m5 = st.columns(5)
 total_borc = df['Borc_Tutari'].sum()
@@ -74,20 +74,18 @@ m5.metric("Genel Ortalama Net Kar", f"{genel_net_kar:.2%}")
 
 st.divider()
 
-# --- 4. ANALİZ SEKMELERİ ---
+# --- 4. ANA SEKMELER ---
 tab1, tab2, tab3 = st.tabs(["👥 Müşteri Net Karlılık", "💰 Nakit Akış & Denge", "📦 Stok Takvimi"])
 
 # --- TAB 1: MÜŞTERİ NET KARLILIK ---
 with tab1:
     st.subheader("Müşteri Bazlı Konsolide Net Karlılık Raporu")
-    m_ozet = df.groupby('Müşteri').agg({'Tahsilat_Tutari': 'sum', 'Net_Kar_Orani': 'mean', 'Adet': 'sum'}).reset_index()
+    m_ozet = df.groupby('Müşteri').agg({'Tahsilat_Tutari': 'sum', 'Net_Kar_Orani': 'mean'}).reset_index()
     m_ozet = m_ozet.rename(columns={'Net_Kar_Orani': 'Net Karlılık'})
 
     def musteri_stil(row):
         val = row['Net Karlılık']
-        if val >= 0.25: color = '#d4edda'
-        elif 0.12 <= val < 0.25: color = '#fff3cd'
-        else: color = '#f8d7da'
+        color = '#d4edda' if val >= 0.25 else '#fff3cd' if val >= 0.12 else '#f8d7da'
         return [f'background-color: {color}'] * len(row)
 
     st.dataframe(m_ozet.sort_values('Net Karlılık', ascending=False).style.apply(musteri_stil, axis=1).format({'Net Karlılık': '{:.2%}', 'Tahsilat_Tutari': '{:,.0f}₺'}), use_container_width=True)
@@ -100,9 +98,7 @@ with tab2:
     t_analiz['Gun_Farki'] = (t_analiz['Borc_Vade'] - t_analiz['Cek_Vade']).dt.days
 
     def nakit_stil(row):
-        if row['Net_Denge'] > 0 and row['Gun_Farki'] >= 0: color = '#d1fae5'
-        elif row['Net_Denge'] > 0 and row['Gun_Farki'] < 0: color = '#fef3c7'
-        else: color = '#fee2e2'
+        color = '#d1fae5' if (row['Net_Denge'] > 0 and row['Gun_Farki'] >= 0) else '#fef3c7' if row['Net_Denge'] > 0 else '#fee2e2'
         return [f'background-color: {color}'] * len(row)
 
     st.dataframe(t_analiz.style.apply(nakit_stil, axis=1).format({'Borc_Tutari': '{:,.0f}₺', 'Tahsilat_Tutari': '{:,.0f}₺', 'Net_Denge': '{:,.0f}₺'}), use_container_width=True)
@@ -110,9 +106,19 @@ with tab2:
 # --- TAB 3: STOK TAKVİMİ ---
 with tab3:
     st.subheader("Güvenli Stok ve Satış Planı")
-    stok_analiz = df.groupby('Ürün').agg({'Stok': 'mean', 'Stok_Potansiyel_Ciro': 'mean', 'Borc_Vade': 'min'}).reset_index()
+    stok_analiz = df.groupby('Ürün').agg({'Stok': 'mean', 'Stok_Potansiyel_Ciro': 'sum', 'Borc_Vade': 'min'}).reset_index()
     stok_analiz['En Geç Güvenli Satış'] = stok_analiz['Borc_Vade'] - timedelta(days=15)
-    st.dataframe(stok_analiz.sort_values('Stok').format({'Stok_Potansiyel_Ciro': '{:,.0f}₺'}), use_container_width=True)
+    
+    # Tarihleri stringe çevirerek hata riskini sıfırlıyoruz
+    stok_analiz['En Geç Güvenli Satış'] = stok_analiz['En Geç Güvenli Satış'].dt.strftime('%d.%m.%Y')
+    
+    st.dataframe(
+        stok_analiz.sort_values('Stok').style.format({
+            'Stok': '{:.0f}',
+            'Stok_Potansiyel_Ciro': '{:,.0f}₺'
+        }), 
+        use_container_width=True
+    )
 
 # --- SIDEBAR ---
 with st.sidebar:
